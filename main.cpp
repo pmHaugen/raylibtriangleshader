@@ -2,7 +2,7 @@
 #include <raymath.h>   // Include for vector math functions
 #include <rlgl.h>      // Include for raylib OpenGL functionality
 
-
+#include <iostream>    // For cout and cin
 #include <math.h>      // For mathematical functions like sinf(), cosf()
 #include <vector>
 #include <string>
@@ -165,6 +165,19 @@ int main()
     // Initialization
     const int screenWidth = 900;
     const int screenHeight = 650;
+
+    //If shader folder is not present, copy it from ../resources
+    std::string shaderPath = std::string(GetWorkingDirectory()) + "\\resources";
+    if (!DirectoryExists(shaderPath.c_str()))
+    {
+        std::string resourcesPath = std::string(GetWorkingDirectory()).substr(0, std::string(GetWorkingDirectory()).find_last_of("\\")) + "\\resources";
+
+        std::string shaderResourcesPath = resourcesPath + "\\shaders";
+        std::string targetPath = std::string(GetWorkingDirectory()) + "\\resources";
+        std::string copyCommand = "cp -r " + resourcesPath + " " + targetPath;
+        system(copyCommand.c_str());
+        std::cout << "tries to copy from " << resourcesPath << " to " << targetPath << std::endl;
+    }
     
     InitWindow(screenWidth, screenHeight, "3D Triangle at Character Location");
     SetTargetFPS(9999); // Set our game to run at 60 frames-per-second
@@ -233,7 +246,8 @@ int main()
     int locLineColor = GetShaderLocation(lineShader, "lineColor");
     SetShaderValue(lineShader, locLineColor, &lineColor, SHADER_UNIFORM_VEC4);
 
-
+    
+    std::cout << "Working DIR:::::" << GetWorkingDirectory() << std::endl;
     //material.shader = lineShader;  // Applying your shader to material
     
     while (!WindowShouldClose()) // Detect window close button or ESC key
