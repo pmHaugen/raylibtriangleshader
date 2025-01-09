@@ -12,10 +12,49 @@ typedef struct Character {
     float speed;
 } Character;
 
+typedef struct threeSidedTriangle {
+    Vector3 vertices[12];
+} threeSidedTriangle;
+
 // Function to update the character's position (if needed)
-void UpdateCharacter(Character *character) 
+void UpdateCharacter(Character &character, std::vector<Vector3> &triangles, Mesh &mesh)
 {
-    character->position.z += character->speed;
+    character.position.z += character.speed;
+    bool foundTriangle = false;
+
+    // if character is near any triangle vertex, remove that vertex
+    for (std::vector<Vector3>::size_type i = 0; i < triangles.size(); i+=3)
+    {
+        Vector3 v1 = triangles[i];
+        Vector3 v2 = triangles[i+1];
+        Vector3 v3 = triangles[i+2];
+        float distance1 = Vector3Distance(character.position, v1);
+        float distance2 = Vector3Distance(character.position, v2);
+        float distance3 = Vector3Distance(character.position, v3);
+
+        if (distance1 < 1.0f)
+        {
+            triangles.erase(triangles.begin() + i);
+            triangles.erase(triangles.begin() + i + 1);
+            triangles.erase(triangles.begin() + i + 2);
+            foundTriangle = true;
+        }
+        if (distance2 < 1.0f)
+        {
+            triangles.erase(triangles.begin() + i);
+            triangles.erase(triangles.begin() + i + 1);
+            triangles.erase(triangles.begin() + i + 2);
+            foundTriangle = true;
+        }
+        if (distance3 < 1.0f)
+        {
+            triangles.erase(triangles.begin() + i);
+            triangles.erase(triangles.begin() + i + 1);
+            triangles.erase(triangles.begin() + i + 2);
+            foundTriangle = true;
+        }
+    }
+
 }
 
 // Function to create box vertices
@@ -96,11 +135,12 @@ void RotateTriangle(Vector3& vertices1, Vector3& vertices2, Vector3& vertices3, 
     vertices3 = Vector3Add(v2, centroid);
 }
 
-std::vector<Vector3> createRandomTriangles(int numShapes, float minwidth, float maxwidth, float minheight, float maxheight, float minX, float maxX, float minY, float maxY, float minZ, float maxZ)
+std::vector<threeSidedTriangle> createRandomTriangles(int numShapes, float minwidth, float maxwidth, float minheight, float maxheight, float minX, float maxX, float minY, float maxY, float minZ, float maxZ)
 {
-    std::vector<Vector3> vertices;
+    std::vector<threeSidedTriangle> triangles;
     for (int i = 0; i < numShapes; i++)
     {
+        triangles.push_back(threeSidedTriangle());
         float randX = GetRandomValue((int)(minX*100), (int)(maxX*100)) / 100.0f;
         float randY = GetRandomValue((int)(minY*100), (int)(maxY*100)) / 100.0f;
         float randZ = GetRandomValue((int)(minZ*100), (int)(maxZ*100)) / 100.0f;
@@ -115,26 +155,26 @@ std::vector<Vector3> createRandomTriangles(int numShapes, float minwidth, float 
         Vector3 apex  = { position.x, position.y + height, position.z };
 
         // Face 1
-        vertices.push_back(apex);
-        vertices.push_back(baseB);
-        vertices.push_back(baseA);
+        triangles[i].vertices[0] = apex;
+        triangles[i].vertices[1] = baseB;
+        triangles[i].vertices[2] = baseA;
 
         // Face 2
-        vertices.push_back(apex);
-        vertices.push_back(baseA);
-        vertices.push_back(baseC);
+        triangles[i].vertices[3] = apex;
+        triangles[i].vertices[4] = baseA;
+        triangles[i].vertices[5] = baseC;
 
         // Face 3
-        vertices.push_back(apex);
-        vertices.push_back(baseC);
-        vertices.push_back(baseB);
+        triangles[i].vertices[6] = apex;
+        triangles[i].vertices[7] = baseC;
+        triangles[i].vertices[8] = baseB;
 
         // Base face
-        vertices.push_back(baseA);
-        vertices.push_back(baseB);
-        vertices.push_back(baseC);
+        triangles[i].vertices[9] = baseA;
+        triangles[i].vertices[10] = baseB;
+        triangles[i].vertices[11] = baseC;
     }
-    return vertices;
+    return triangles;
 }
 std::vector<Vector3> createLineAroundTriangles(std::vector<Vector3> vertices)
 {
@@ -207,10 +247,12 @@ int main()
     character.position = (Vector3){ 0.0f, 0.0f, 0.0f };
     character.speed = 0.1f;
 
+    std::vector<Vector3> characterVertices = createBox(character.position, 1.0f, 1.0f, 1.0f);
+
     const float cameraSpeed = 40.1f;
-    std::vector<Vector3> vertices;
-    vertices = createRandomTriangles(1000, 1.5f, 1.7f, 1.0f, 7.0f, -100, 100, 0, 0, -100, 100);
-    Mesh grassmesh = {0};
+    std::vector<threeSidedTriangle> vertices;
+    vertices = createRandomTriangles(500000, 1.5f, 1.7f, 1.0f, 7.0f, -1000, 1000, 0, 0, -1000, 1000);
+    /*Mesh grassmesh = {0};
     grassmesh.triangleCount = vertices.size() / 3;
     grassmesh.vertexCount = vertices.size();
     grassmesh.vertices = (float *)malloc(vertices.size() * 3 * sizeof(float));
@@ -222,9 +264,8 @@ int main()
         grassmesh.vertices[i * 3 + 1] = vertices[i].y;
         grassmesh.vertices[i * 3 + 2] = vertices[i].z;
     }
-    UploadMesh(&grassmesh, false);
-
-
+    UploadMesh(&grassmesh, true);
+    */
 
     // Main game loop
     float trianglerRotationSpeed = 1.0f;
@@ -333,27 +374,31 @@ int main()
         SetShaderValueMatrix(lineShader, locModel, MatrixIdentity());
         SetShaderValueMatrix(lineShader, locView, GetCameraMatrix(camera)); // Will be updated each frame
         SetShaderValueMatrix(lineShader, locProjection, MatrixPerspective(camera.fovy * DEG2RAD, (float)screenWidth / (float)screenHeight, 1.01f, 10000.0f));
-
+        //UpdateCharacter(character, vertices, grassmesh);
+        characterVertices = createBox(character.position, 1.0f, 1.0f, 1.0f);
         // Start Drawing
         BeginDrawing();
             ClearBackground(BLUE);
 
             BeginMode3D(camera);
-            BeginShaderMode(lineShader);
+            //BeginShaderMode(lineShader);
 
             Material shadermat = LoadMaterialDefault();
             shadermat.shader = lineShader;
 
-            for (std::vector<Vector3>::size_type i = 0; i < vertices.size(); i+=3)
+            for (std::vector<Vector3>::size_type i = 0; i < vertices.size(); i++)
             {
-                Vector3 triangle[3] = { vertices[i], vertices[i + 1], vertices[i + 2] };
-                SetShaderValueV(lineShader, GetShaderLocation(lineShader, "vertices"), triangle, SHADER_UNIFORM_VEC3, 3);
-                DrawMesh(grassmesh, shadermat, MatrixIdentity());
+
+                SetShaderValueV(lineShader, GetShaderLocation(lineShader, "vertices"), vertices[i].vertices, SHADER_UNIFORM_VEC3, 3);
+                //DrawMesh(grassmesh, shadermat, MatrixIdentity());
+                DrawTriangle3D(vertices[i].vertices[0], vertices[i].vertices[1], vertices[i].vertices[2], GREEN);
+                DrawTriangle3D(vertices[i].vertices[3], vertices[i].vertices[4], vertices[i].vertices[5], GREEN);
+                DrawTriangle3D(vertices[i].vertices[6], vertices[i].vertices[7], vertices[i].vertices[8], GREEN);
 
             }
-            
-            EndShaderMode();
-            DrawMesh(grassmesh, material, MatrixIdentity());
+            //EndShaderMode();
+
+
 
             
 
@@ -378,8 +423,7 @@ int main()
     }
 
     // De-Initialization
-    UnloadMesh(grassmesh); // Unload mesh data
-    UnloadMaterial(material); // Unload material data
+
 
     CloseWindow();        // Close window and OpenGL context
 
