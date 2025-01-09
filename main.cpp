@@ -12,6 +12,12 @@ typedef struct Character {
     float speed;
 } Character;
 
+typedef struct {
+    Camera camera;
+    float yaw;
+    float pitch;
+} FreeFlyCamera;
+
 // Function to update the character's position (if needed)
 void UpdateCharacter(Character *character) 
 {
@@ -160,6 +166,46 @@ std::vector<Vector3> createLineAroundTriangles(std::vector<Vector3> vertices)
     return linevertices;
 }
 
+void moveCamera(FreeFlyCamera *ffc, double rotSpeed, double moveSpeed) 
+{
+    // Mouse movement
+    Vector2 mouseDelta = GetMouseDelta();
+    ffc->yaw -= mouseDelta.x * rotSpeed;
+    ffc->pitch -= mouseDelta.y * rotSpeed;
+
+    // Clamp pitch to avoid gimbal lock
+    if (ffc->pitch > PI / 2.0f) ffc->pitch = PI / 2.0f;
+    if (ffc->pitch < -PI / 2.0f) ffc->pitch = -PI / 2.0f;
+
+    // Calculate forward and right vectors
+    Vector3 forward = {
+        cosf(ffc->pitch) * sinf(ffc->yaw),
+        sinf(ffc->pitch),
+        cosf(ffc->pitch) * cosf(ffc->yaw)
+    };
+    Vector3 right = {
+        cosf(ffc->yaw),
+        0.0f,
+        -sinf(ffc->yaw)
+    };
+
+    // Movement input
+    Vector3 movement = {0};
+    if (IsKeyDown(KEY_W)) movement = Vector3Add(movement, forward);
+    if (IsKeyDown(KEY_S)) movement = Vector3Subtract(movement, forward);
+    if (IsKeyDown(KEY_A)) movement = Vector3Add(movement, right);
+    if (IsKeyDown(KEY_D)) movement = Vector3Subtract(movement, right);
+    if (IsKeyDown(KEY_LEFT_SHIFT)) movement = Vector3Add(movement, (Vector3){0, 1, 0});
+    if (IsKeyDown(KEY_LEFT_CONTROL)) movement = Vector3Subtract(movement, (Vector3){0, 1, 0});
+
+    // Normalize movement vector to prevent faster diagonal movement
+    if (Vector3Length(movement) > 0.0f) movement = Vector3Normalize(movement);
+
+    // Update camera position and target
+    ffc->camera.position = Vector3Add(ffc->camera.position, Vector3Scale(movement, moveSpeed));
+    ffc->camera.target = Vector3Add(ffc->camera.position, forward);
+}
+
 int main()
 {
     // Initialization
@@ -186,17 +232,15 @@ int main()
     camera.projection = CAMERA_PERSPECTIVE;           // Camera mode type
 
     
+    FreeFlyCamera ffc = { camera, 0.0f, 0.0f };
 
-    float cameraYaw = 0.0f;
-    float cameraPitch = 0.0f;
     // Initialize the character
     Character character = { 0 };
     character.position = (Vector3){ 0.0f, 0.0f, 0.0f };
     character.speed = 0.1f;
 
-    const float cameraSpeed = 40.1f;
     std::vector<Vector3> vertices;
-    vertices = createRandomTriangles(1000, 1.5f, 1.7f, 1.0f, 7.0f, -100, 100, 0, 0, -100, 100);
+    vertices = createRandomTriangles(10000, 1.5f, 1.7f, 1.0f, 7.0f, -300, 300, 0, 0, -300, 300);
     Mesh grassmesh = {0};
     grassmesh.triangleCount = vertices.size() / 3;
     grassmesh.vertexCount = vertices.size();
@@ -214,117 +258,45 @@ int main()
 
 
     // Main game loop
-    float trianglerRotationSpeed = 1.0f;
+    //float trianglerRotationSpeed = 1.0f;
     float windForce = 0.01f;
 
     Shader lineShader = LoadShader("shaders/lineshader.vx", "shaders/lineshader.fs");
     
-    Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};  // Red lines
+    Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};  
 
 
     int locModel = GetShaderLocation(lineShader, "model");
     int locView = GetShaderLocation(lineShader, "view");
     int locProjection = GetShaderLocation(lineShader, "projection");
 
-    float edgeThreshold = 0.1f; // Adjust as needed for edge thickness
+    float edgeThreshold = 0.06f; // Adjust as needed for edge thickness
     SetShaderValue(lineShader, GetShaderLocation(lineShader, "edgeThreshold"), &edgeThreshold, SHADER_UNIFORM_FLOAT);
     
 
     int locLineColor = GetShaderLocation(lineShader, "lineColor");
     SetShaderValue(lineShader, locLineColor, &lineColor, SHADER_UNIFORM_VEC4);
 
-
-    //material.shader = lineShader;  // Applying your shader to material
     
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
 
         double deltaTime = GetFrameTime();
-        // Camera movement controls
-        // Mouse movement sensitivity
-        const float sensitivity = -0.3f;
 
-        // Get current mouse position
-        Vector2 mousePosition = GetMousePosition();
 
-        // Calculate mouse delta
-        float deltaX = mousePosition.x - (screenWidth / 2);
-        float deltaY = mousePosition.y - (screenHeight / 2);
+        moveCamera(&ffc, 0.002, 100.0*deltaTime);
 
-        // Update camera rotation angles
-        cameraYaw += deltaX * sensitivity*deltaTime;
-        cameraPitch += deltaY * sensitivity*deltaTime;
 
-        // Limit camera pitch to prevent flipping
-        if (cameraPitch > PI/2.0f - 0.01f) cameraPitch = PI/2.0f - 0.01f;
-        if (cameraPitch < -PI/2.0f + 0.01f) cameraPitch = -PI/2.0f + 0.01f;
 
-        // Update camera's target position
-        Vector3 forward = {
-            cosf(cameraPitch) * sinf(cameraYaw),
-            sinf(cameraPitch),
-            cosf(cameraPitch) * cosf(cameraYaw)
-        };
-
-        camera.target = Vector3Add(camera.position, forward);
-
-        // Reset mouse position to center
-        SetMousePosition(screenWidth / 2, screenHeight / 2);
-        if (IsKeyDown(KEY_W))
-        {
-            camera.position.z += cameraSpeed*deltaTime;
-            camera.target.z += cameraSpeed*deltaTime;
-        }
-        if (IsKeyDown(KEY_S))
-        {
-            camera.position.z -= cameraSpeed*deltaTime;
-            camera.target.z -= cameraSpeed*deltaTime;
-        }
-        if (IsKeyDown(KEY_A))
-        {
-            camera.position.x += cameraSpeed*deltaTime;
-            camera.target.x += cameraSpeed*deltaTime;
-        }
-        if (IsKeyDown(KEY_D))
-        {
-            camera.position.x -= cameraSpeed*deltaTime;
-            camera.target.x -= cameraSpeed*deltaTime;
-        }
-        if (IsKeyDown(KEY_UP))
-        {
-            windForce += 0.01f;
-        }
-        if (IsKeyDown(KEY_DOWN))
-        {
-            windForce -= 0.01f;
-        }
-        if (IsKeyDown(KEY_Q))
-        {
-            camera.position.y += cameraSpeed*deltaTime;
-            camera.target.y += cameraSpeed*deltaTime;
-        }
-        if (IsKeyDown(KEY_E))
-        {
-            camera.position.y -= cameraSpeed*deltaTime;
-            camera.target.y -= cameraSpeed*deltaTime;
-        }
-        if (windForce > 0)
-        {
-            windForce -= deltaTime;
-        }
-        else
-        {
-            windForce = 0;
-        }
         SetShaderValueMatrix(lineShader, locModel, MatrixIdentity());
-        SetShaderValueMatrix(lineShader, locView, GetCameraMatrix(camera)); // Will be updated each frame
-        SetShaderValueMatrix(lineShader, locProjection, MatrixPerspective(camera.fovy * DEG2RAD, (float)screenWidth / (float)screenHeight, 1.01f, 10000.0f));
+        SetShaderValueMatrix(lineShader, locView, GetCameraMatrix(ffc.camera)); // Will be updated each frame
+        SetShaderValueMatrix(lineShader, locProjection, MatrixPerspective(ffc.camera.fovy * DEG2RAD, (float)screenWidth / (float)screenHeight, 0.01f, 10000.0f));
 
         // Start Drawing
         BeginDrawing();
             ClearBackground(BLUE);
 
-            BeginMode3D(camera);
+            BeginMode3D(ffc.camera);
             BeginShaderMode(lineShader);
 
             Material shadermat = LoadMaterialDefault();
