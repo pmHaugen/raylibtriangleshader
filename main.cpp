@@ -58,7 +58,7 @@ typedef struct {
 
 void InitCollisionCellObjects(std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CELL_SIZE/CELL_SIZE> &collisionCells, std::vector<Character> &characters, std::vector<threeSidedTriangle> &triangles)
 {
-    std::cout << "InitCollisionCellObjects" << std::endl;
+    //std::cout << "InitCollisionCellObjects" << std::endl;
     for (CollisionCell &cell : collisionCells)
     {
         cell.triangles.clear();
@@ -527,7 +527,7 @@ int main()
     float cameraPitch = 0.0f;
     // Create Characters
     std::vector<Character> characters;
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 1; i++)
     {
         characters.push_back(Character());
         characters[i].id = i;
@@ -666,19 +666,25 @@ int main()
                                 * (WORLD_SIZE / CELL_SIZE)
                                 + static_cast<int>(((vertices[i].centerPosition.z + WORLD_SIZE * 0.5f) / CELL_SIZE));
 
-                    
+                    bool found = false;
                     for (int j = 0; j < collisionCells[cellIdx].triangles.size(); j++)
                     {
                         if (collisionCells[cellIdx].triangles[j] == &vertices[i])
                         {
+                            //std::cout << "erasing triangle: " << &vertices[i] << std::endl;
                             collisionCells[cellIdx].triangles.erase(collisionCells[cellIdx].triangles.begin() + j);
+                            found = true;
                             break;
                         }
+                    }
+                    if (!found)
+                    {
+                        std::cout << "triangle not found in cell" << std::endl;
                     }
 
 
                     vertices.erase(vertices.begin() + i);
-                    //InitCollisionCellObjects(collisionCells, characters, vertices);
+                    InitCollisionCellObjects(collisionCells, characters, vertices);
                     i--;
                     continue;
                 }
