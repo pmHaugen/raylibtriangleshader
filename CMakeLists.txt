@@ -9,6 +9,7 @@ if(WIN32)
         "C:/msys64/usr/local/include"
     )
     link_directories("C:/msys64/usr/local/lib")
+    
 
 
 elseif(UNIX)
@@ -21,7 +22,7 @@ elseif(UNIX)
 endif()
 
 # Project name
-project(My2DGame)
+project(TriangleSimulation)
 
 # Set C++ standard (if needed for any custom code)
 set(CMAKE_CXX_STANDARD 11)

@@ -1,15 +1,32 @@
+
 #include <raylib.h>
 #include <raymath.h>   // Include for vector math functions
 #include <rlgl.h>      // Include for raylib OpenGL functionality
 
-
+#include <iostream>    // For cout and cin
 #include <math.h>      // For mathematical functions like sinf(), cosf()
 #include <vector>
 #include <string>
+#include <array>
+#include <unordered_set>
+
+#define WORLD_SIZE 500
+#define CELL_SIZE 5
+
 // Define the Character structure
 typedef struct Character {
+    int id;
     Vector3 position;
+    float width;
+    float height;
+    float length;
     float speed;
+    bool target;
+    Vector3 targetPosition;
+    std::array<int, 4> cells = {0, 0, 0, 0};
+    std::vector<Vector3> vertices;
+
+    Character() : position{0.0f, 0.0f, 0.0f}, width(1), height(1), length(1), speed(100.0f), target(false), targetPosition{0.0f, 0.0f, 0.0f} {}
 } Character;
 
 typedef struct {
@@ -18,10 +35,170 @@ typedef struct {
     float pitch;
 } FreeFlyCamera;
 
-// Function to update the character's position (if needed)
-void UpdateCharacter(Character *character) 
+typedef struct threeSidedTriangle {
+    Vector3 vertices[12];
+    Vector3 centerPosition;
+    float health = 1;
+
+} threeSidedTriangle;
+
+typedef struct {
+    int x;
+    int y;
+    int z;
+    int width;
+    int depth;
+    std::vector<Character*> characters;
+    std::vector<threeSidedTriangle*> triangles;
+} CollisionCell;
+
+
+void InitCollisionCellObjects(std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CELL_SIZE/CELL_SIZE> &collisionCells, std::vector<Character> &characters, std::vector<threeSidedTriangle> &triangles)
 {
-    character->position.z += character->speed;
+    for (Character &character : characters)
+    {
+        for (CollisionCell &cell : collisionCells)
+        {
+            if (character.position.x >= cell.x && character.position.x < cell.x + cell.width &&
+                character.position.z >= cell.z && character.position.z < cell.z + cell.depth)
+            {
+                cell.characters.push_back(&character);
+                character.cells[0] = &cell - &collisionCells[0];
+            }
+        }
+    }
+    for (CollisionCell &cell : collisionCells)
+    {
+        cell.triangles.clear();
+    }
+
+    for (threeSidedTriangle &triangle : triangles)
+    {
+        for (CollisionCell &cell : collisionCells)
+        {
+            if (triangle.centerPosition.x >= cell.x && triangle.centerPosition.x < cell.x + cell.width &&
+                triangle.centerPosition.z >= cell.z && triangle.centerPosition.z < cell.z + cell.depth)
+            {
+                cell.triangles.push_back(&triangle);
+            }
+        }
+    }
+}
+
+// Function to update the character's position (if needed)
+void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CELL_SIZE/CELL_SIZE> &collisionCells)
+{
+    std::array<Vector2, 4> corners = {
+        Vector2{character.position.x - character.width / 2, character.position.z - character.length / 2},
+        Vector2{character.position.x + character.width / 2, character.position.z - character.length / 2},
+        Vector2{character.position.x + character.width / 2, character.position.z + character.length / 2},
+        Vector2{character.position.x - character.width / 2, character.position.z + character.length / 2}
+    };
+   
+    for (int i = 0; i < 4; i++)
+    {
+        if (corners[i].x < collisionCells[character.cells[i]].x || corners[i].x > collisionCells[character.cells[i]].x + collisionCells[character.cells[i]].width ||
+            corners[i].y < collisionCells[character.cells[i]].z || corners[i].y > collisionCells[character.cells[i]].z + collisionCells[character.cells[i]].depth)
+        {
+            for (auto cell : collisionCells[character.cells[i]].characters)
+            {
+                if (cell->id == character.id)
+                {
+                    collisionCells[character.cells[i]].characters.erase(collisionCells[character.cells[i]].characters.begin());
+                    int newCellIndex = (int)((character.position.x + WORLD_SIZE / 2) / CELL_SIZE) * (WORLD_SIZE / CELL_SIZE) + (int)((character.position.z + WORLD_SIZE / 2) / CELL_SIZE);
+                    CollisionCell &newCell = collisionCells[newCellIndex];
+                    newCell.characters.push_back(&character);
+                    character.cells[i] = newCellIndex;
+                    break;
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < 4; i++)
+    {
+        for (auto cell : collisionCells[character.cells[i]].triangles)
+        {
+            if (Vector3Distance(character.position, cell->centerPosition) < 5.0f)
+            {
+                collisionCells[character.cells[i]].triangles.erase(collisionCells[character.cells[i]].triangles.begin());
+                character.target = false;
+                cell->health -= 1000;
+            }
+        }
+    }
+
+    if (character.target == false)
+    {
+        float nearestDistance = 1000000.0f;
+        for (auto cell : collisionCells)
+        {
+            for (auto triangle : cell.triangles)
+            {
+                if (Vector3Distance(character.position, triangle->centerPosition) < nearestDistance)
+                {
+                    nearestDistance = Vector3Distance(character.position, triangle->centerPosition);
+                    character.target = true;
+                    character.targetPosition = triangle->centerPosition;
+                }
+            }
+        }
+    }
+    std::cout << character.target << "   " << std::endl;
+    //std::cout << "Character " << character.id << " is in cell " << character.cells[0] << " with " << collisionCells[character.cells[0]].triangles.size() << " triangles" << std::endl;
+
+    if (character.target)
+    {
+        Vector3 direction = Vector3Normalize(Vector3Subtract(character.targetPosition, character.position));
+        character.position = Vector3Add(character.position, Vector3Scale(direction, character.speed * GetFrameTime()));
+    }
+    else
+    {
+        Vector3 direction = Vector3Normalize(Vector3Subtract({0.0f, 0.0f, 0.0f}, character.position));
+        character.position = Vector3Add(character.position, Vector3Scale(direction, character.speed * GetFrameTime()));
+    }
+
+/*
+    // find nearest vertex and move towards it
+    Vector3 nearestVertex = {0.0f, 0.0f, 0.0f};
+    float nearestDistance = 1000000.0f;
+    if (!character.target)
+    {
+        for (std::vector<threeSidedTriangle>::size_type i = 0; i < triangles.size(); i++)
+        {
+            float distance = Vector3Distance(character.position, triangles[i].centerPosition);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearestVertex = triangles[i].centerPosition;
+                character.target = true;
+            }
+        }
+        character.targetPosition = nearestVertex;
+    }
+
+    // move towards target
+    else
+    {
+        character.speed -= 1000.0f*GetFrameTime();
+        if (character.speed <= 0.0f)
+        {
+            character.speed = 0.0f;
+        }
+    }
+    
+
+    // if character is near any triangle vertex, remove that vertex
+    for (std::vector<threeSidedTriangle>::size_type i = 0; i < triangles.size(); i++)
+    {
+        if (Vector3Distance(character.position, triangles[i].centerPosition) < 10.0f)
+        {
+            triangles.erase(triangles.begin() + i);
+            character.target = false;
+
+        }
+    }
+    */
 }
 
 // Function to create box vertices
@@ -31,14 +208,14 @@ std::vector<Vector3> createBox(Vector3 pos, float width, float height, float dep
 
     // Calculate the positions of the 8 corners of the box
     Vector3 v[8];
-    v[0] = (Vector3){ pos.x - width / 2, pos.y + height / 2, pos.z + depth / 2 }; // Left Top Front
-    v[1] = (Vector3){ pos.x + width / 2, pos.y + height / 2, pos.z + depth / 2 }; // Right Top Front
-    v[2] = (Vector3){ pos.x + width / 2, pos.y + height / 2, pos.z - depth / 2 }; // Right Top Back
-    v[3] = (Vector3){ pos.x - width / 2, pos.y + height / 2, pos.z - depth / 2 }; // Left Top Back
-    v[4] = (Vector3){ pos.x - width / 2, pos.y - height / 2, pos.z + depth / 2 }; // Left Bottom Front
-    v[5] = (Vector3){ pos.x + width / 2, pos.y - height / 2, pos.z + depth / 2 }; // Right Bottom Front
-    v[6] = (Vector3){ pos.x + width / 2, pos.y - height / 2, pos.z - depth / 2 }; // Right Bottom Back
-    v[7] = (Vector3){ pos.x - width / 2, pos.y - height / 2, pos.z - depth / 2 }; // Left Bottom Back
+    v[0] = (Vector3){ pos.x - width / 2, pos.y + height, pos.z + depth / 2 }; // Left Top Front
+    v[1] = (Vector3){ pos.x + width / 2, pos.y + height, pos.z + depth / 2 }; // Right Top Front
+    v[2] = (Vector3){ pos.x + width / 2, pos.y + height, pos.z - depth / 2 }; // Right Top Back
+    v[3] = (Vector3){ pos.x - width / 2, pos.y + height, pos.z - depth / 2 }; // Left Top Back
+    v[4] = (Vector3){ pos.x - width / 2, pos.y, pos.z + depth / 2 }; // Left Bottom Front
+    v[5] = (Vector3){ pos.x + width / 2, pos.y, pos.z + depth / 2 }; // Right Bottom Front
+    v[6] = (Vector3){ pos.x + width / 2, pos.y, pos.z - depth / 2 }; // Right Bottom Back
+    v[7] = (Vector3){ pos.x - width / 2, pos.y, pos.z - depth / 2 }; // Left Bottom Back
 
     // Define the 12 triangles composing the box
     // Each face has 2 triangles
@@ -72,10 +249,10 @@ std::vector<Vector3> createBox(Vector3 pos, float width, float height, float dep
     return vertices;
 }
 
-void GrassWindSway(Vector3& vertices1, Vector3& vertices2, Vector3& vertices3, Vector3 windPosition, float windForce)
-{
-
-}
+//void GrassWindSway(Vector3& vertices1, Vector3& vertices2, Vector3& vertices3, Vector3 windPosition, float windForce)
+//{
+//
+//}
 
 
 void RotateTriangle(Vector3& vertices1, Vector3& vertices2, Vector3& vertices3, float speed)
@@ -102,11 +279,12 @@ void RotateTriangle(Vector3& vertices1, Vector3& vertices2, Vector3& vertices3, 
     vertices3 = Vector3Add(v2, centroid);
 }
 
-std::vector<Vector3> createRandomTriangles(int numShapes, float minwidth, float maxwidth, float minheight, float maxheight, float minX, float maxX, float minY, float maxY, float minZ, float maxZ)
+std::vector<threeSidedTriangle> createRandomTriangles(int numShapes, float minwidth, float maxwidth, float minheight, float maxheight, float minX, float maxX, float minY, float maxY, float minZ, float maxZ)
 {
-    std::vector<Vector3> vertices;
+    std::vector<threeSidedTriangle> triangles;
     for (int i = 0; i < numShapes; i++)
     {
+        triangles.push_back(threeSidedTriangle());
         float randX = GetRandomValue((int)(minX*100), (int)(maxX*100)) / 100.0f;
         float randY = GetRandomValue((int)(minY*100), (int)(maxY*100)) / 100.0f;
         float randZ = GetRandomValue((int)(minZ*100), (int)(maxZ*100)) / 100.0f;
@@ -114,6 +292,7 @@ std::vector<Vector3> createRandomTriangles(int numShapes, float minwidth, float 
         float height = GetRandomValue((int)(minheight*100), (int)(maxheight*100)) / 100.0f;
 
         Vector3 position = { randX, randY, randZ };
+        triangles[i].centerPosition = position;
 
         Vector3 baseA = { position.x - width/2, position.y, position.z - width/2 };
         Vector3 baseB = { position.x + width/2, position.y, position.z - width/2 };
@@ -121,26 +300,26 @@ std::vector<Vector3> createRandomTriangles(int numShapes, float minwidth, float 
         Vector3 apex  = { position.x, position.y + height, position.z };
 
         // Face 1
-        vertices.push_back(apex);
-        vertices.push_back(baseB);
-        vertices.push_back(baseA);
+        triangles[i].vertices[0] = apex;
+        triangles[i].vertices[1] = baseB;
+        triangles[i].vertices[2] = baseA;
 
         // Face 2
-        vertices.push_back(apex);
-        vertices.push_back(baseA);
-        vertices.push_back(baseC);
+        triangles[i].vertices[3] = apex;
+        triangles[i].vertices[4] = baseA;
+        triangles[i].vertices[5] = baseC;
 
         // Face 3
-        vertices.push_back(apex);
-        vertices.push_back(baseC);
-        vertices.push_back(baseB);
+        triangles[i].vertices[6] = apex;
+        triangles[i].vertices[7] = baseC;
+        triangles[i].vertices[8] = baseB;
 
         // Base face
-        vertices.push_back(baseA);
-        vertices.push_back(baseB);
-        vertices.push_back(baseC);
+        triangles[i].vertices[9] = baseA;
+        triangles[i].vertices[10] = baseB;
+        triangles[i].vertices[11] = baseC;
     }
-    return vertices;
+    return triangles;
 }
 std::vector<Vector3> createLineAroundTriangles(std::vector<Vector3> vertices)
 {
@@ -166,7 +345,7 @@ std::vector<Vector3> createLineAroundTriangles(std::vector<Vector3> vertices)
     return linevertices;
 }
 
-void moveCamera(FreeFlyCamera *ffc, double rotSpeed, double moveSpeed) 
+void flyCamera(FreeFlyCamera *ffc, double rotSpeed, double moveSpeed)
 {
     // Mouse movement
     Vector2 mouseDelta = GetMouseDelta();
@@ -205,12 +384,80 @@ void moveCamera(FreeFlyCamera *ffc, double rotSpeed, double moveSpeed)
     ffc->camera.position = Vector3Add(ffc->camera.position, Vector3Scale(movement, moveSpeed));
     ffc->camera.target = Vector3Add(ffc->camera.position, forward);
 }
+void walkCamera(FreeFlyCamera *ffc, double rotSpeed, double moveSpeed, bool &isGrounded, float jumpSpeed, float gravity) 
+{
+    // Mouse movement
+    Vector2 mouseDelta = GetMouseDelta();
+    ffc->yaw -= mouseDelta.x * rotSpeed;
+    ffc->pitch -= mouseDelta.y * rotSpeed;
+
+    // Clamp pitch to avoid gimbal lock
+    if (ffc->pitch > PI / 2.0f) ffc->pitch = PI / 2.0f;
+    if (ffc->pitch < -PI / 2.0f) ffc->pitch = -PI / 2.0f;
+
+    // Calculate forward and right vectors
+    Vector3 forward = {
+        cosf(ffc->pitch) * sinf(ffc->yaw),
+        0.0f, // No vertical movement for walking
+        cosf(ffc->pitch) * cosf(ffc->yaw)
+    };
+    Vector3 right = {
+        cosf(ffc->yaw),
+        0.0f,
+        -sinf(ffc->yaw)
+    };
+
+    // Movement input
+    Vector3 movement = {0};
+    if (IsKeyDown(KEY_W)) movement = Vector3Add(movement, forward);
+    if (IsKeyDown(KEY_S)) movement = Vector3Subtract(movement, forward);
+    if (IsKeyDown(KEY_A)) movement = Vector3Add(movement, right);
+    if (IsKeyDown(KEY_D)) movement = Vector3Subtract(movement, right);
+
+    // Normalize movement vector to prevent faster diagonal movement
+    if (Vector3Length(movement) > 0.0f) movement = Vector3Normalize(movement);
+
+    // Apply movement
+    ffc->camera.position = Vector3Add(ffc->camera.position, Vector3Scale(movement, moveSpeed));
+
+    // Jumping and gravity
+    if (isGrounded && IsKeyPressed(KEY_SPACE)) {
+        ffc->camera.position.y += jumpSpeed;
+        isGrounded = false;
+    }
+
+    if (!isGrounded) {
+        ffc->camera.position.y -= gravity * GetFrameTime();
+    }
+
+    // Check if grounded (simple ground check, can be improved with collision detection)
+    if (ffc->camera.position.y <= 0.0f) {
+        ffc->camera.position.y = 0.0f;
+        isGrounded = true;
+    }
+
+    // Update camera target
+    ffc->camera.target = Vector3Add(ffc->camera.position, forward);
+}
 
 int main()
 {
     // Initialization
-    const int screenWidth = 900;
-    const int screenHeight = 650;
+    const int screenWidth = 1200;
+    const int screenHeight = 900;
+
+    //If shader folder is not present, copy it from ../resources
+    std::string shaderPath = std::string(GetWorkingDirectory()) + "\\resources";
+    if (!DirectoryExists(shaderPath.c_str()))
+    {
+        std::string resourcesPath = std::string(GetWorkingDirectory()).substr(0, std::string(GetWorkingDirectory()).find_last_of("\\")) + "\\resources";
+
+        std::string shaderResourcesPath = resourcesPath + "\\shaders";
+        std::string targetPath = std::string(GetWorkingDirectory()) + "\\resources";
+        std::string copyCommand = "cp -r " + resourcesPath + " " + targetPath;
+        system(copyCommand.c_str());
+        std::cout << "tries to copy from " << resourcesPath << " to " << targetPath << std::endl;
+    }
     
     InitWindow(screenWidth, screenHeight, "3D Triangle at Character Location");
     SetTargetFPS(9999); // Set our game to run at 60 frames-per-second
@@ -220,7 +467,20 @@ int main()
     DisableCursor();
     SetMousePosition(screenWidth / 2, screenHeight / 2); // Center the mouse position
 
-
+    std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CELL_SIZE/CELL_SIZE> collisionCells;
+    int cellIndex = 0;
+    for (int x = -WORLD_SIZE/2; x < WORLD_SIZE/2; x += CELL_SIZE)
+    {
+        for (int z = -WORLD_SIZE/2; z < WORLD_SIZE/2; z += CELL_SIZE)
+        {
+            collisionCells[cellIndex].x = x;
+            collisionCells[cellIndex].y = 0;
+            collisionCells[cellIndex].z = z;
+            collisionCells[cellIndex].width = CELL_SIZE;
+            collisionCells[cellIndex].depth = CELL_SIZE;
+            cellIndex++;
+        }
+    }
 
 
     // Define the camera to look into our 3D world
@@ -230,17 +490,32 @@ int main()
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };        // Camera up vector (rotation towards target)
     camera.fovy = 45.0f;                              // Camera field-of-view Y
     camera.projection = CAMERA_PERSPECTIVE;           // Camera mode type
+    std::cout << "cull distance: " << rlGetCullDistanceFar() << "\n"; // Get the far cull distance
 
-    
     FreeFlyCamera ffc = { camera, 0.0f, 0.0f };
 
-    // Initialize the character
-    Character character = { 0 };
-    character.position = (Vector3){ 0.0f, 0.0f, 0.0f };
-    character.speed = 0.1f;
+    float cameraYaw = 0.0f;
+    float cameraPitch = 0.0f;
+    // Create Characters
+    std::vector<Character> characters;
+    for (int i = 0; i < 1; i++)
+    {
+        characters.push_back(Character());
+        characters[i].id = i;
+        characters[i].position = {(float)GetRandomValue(-100, 100), 0.0f, (float)GetRandomValue(-100, 100)};
+        characters[i].speed = 100.0f;
+        characters[i].target = false;
+        characters[i].targetPosition = {0.0f, 0.0f, 0.0f};
+        characters[i].vertices = createBox(characters[i].position, 1.0f, 3.0f, 1.0f);
+    }
 
-    std::vector<Vector3> vertices;
-    vertices = createRandomTriangles(10000, 1.5f, 1.7f, 1.0f, 7.0f, -300, 300, 0, 0, -300, 300);
+  
+
+
+    const float cameraSpeed = 40.1f;
+    std::vector<threeSidedTriangle> vertices;
+    vertices = createRandomTriangles(100, 1.5f, 10.7f, 1.0f, 70.0f, -50, 50, 0, 0, -50, 50);
+    /*
     Mesh grassmesh = {0};
     grassmesh.triangleCount = vertices.size() / 3;
     grassmesh.vertexCount = vertices.size();
@@ -253,24 +528,23 @@ int main()
         grassmesh.vertices[i * 3 + 1] = vertices[i].y;
         grassmesh.vertices[i * 3 + 2] = vertices[i].z;
     }
-    UploadMesh(&grassmesh, false);
-
-
+    UploadMesh(&grassmesh, true);
+    */
 
     // Main game loop
-    //float trianglerRotationSpeed = 1.0f;
+    float trianglerRotationSpeed = 1.0f;
     float windForce = 0.01f;
 
     Shader lineShader = LoadShader("shaders/lineshader.vx", "shaders/lineshader.fs");
     
-    Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};  
+    Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};  // Red lines
 
 
     int locModel = GetShaderLocation(lineShader, "model");
     int locView = GetShaderLocation(lineShader, "view");
     int locProjection = GetShaderLocation(lineShader, "projection");
 
-    float edgeThreshold = 0.06f; // Adjust as needed for edge thickness
+    float edgeThreshold = 0.1f; // Adjust as needed for edge thickness
     SetShaderValue(lineShader, GetShaderLocation(lineShader, "edgeThreshold"), &edgeThreshold, SHADER_UNIFORM_FLOAT);
     
 
@@ -278,44 +552,94 @@ int main()
     SetShaderValue(lineShader, locLineColor, &lineColor, SHADER_UNIFORM_VEC4);
 
     
+    std::cout << "Working DIR:::::" << GetWorkingDirectory() << std::endl;
+    //material.shader = lineShader;  // Applying your shader to material
+
+    for (auto cell : collisionCells)
+    {
+        cell.characters.reserve(100);
+        cell.triangles.reserve(100000);
+    }
+    InitCollisionCellObjects(collisionCells, characters, vertices);
+
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
 
         double deltaTime = GetFrameTime();
+        // Camera movement controls
+        // Mouse movement sensitivity
 
-
-        moveCamera(&ffc, 0.002, 100.0*deltaTime);
-
-
-
+        flyCamera(&ffc, 0.002, 100.0*deltaTime);
+        
         SetShaderValueMatrix(lineShader, locModel, MatrixIdentity());
         SetShaderValueMatrix(lineShader, locView, GetCameraMatrix(ffc.camera)); // Will be updated each frame
-        SetShaderValueMatrix(lineShader, locProjection, MatrixPerspective(ffc.camera.fovy * DEG2RAD, (float)screenWidth / (float)screenHeight, 0.01f, 10000.0f));
+        SetShaderValueMatrix(lineShader, locProjection, MatrixPerspective(ffc.camera.fovy * DEG2RAD, (float)screenWidth / (float)screenHeight, 1.01f, 10000.0f));
+        for (Character &character : characters)
+        {
+            UpdateCharacter(character, collisionCells);
+            character.vertices = createBox(character.position, character.width, character.height, character.length);
+        }
+
+
+        //input
+        if (IsKeyDown(KEY_KP_1))
+        {
+            std::vector<threeSidedTriangle> newTriangles = createRandomTriangles(100, 2.5f, 4.0f, 2.0f, 6.0f, -500, 500, 0, 0, -500, 500);
+            vertices.insert(vertices.end(), newTriangles.begin(), newTriangles.end());
+            InitCollisionCellObjects(collisionCells, characters, vertices);
+        }
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON))
+        {
+            vertices.clear();
+        }
 
         // Start Drawing
         BeginDrawing();
-            ClearBackground(BLUE);
+            ClearBackground({71, 153, 193, 255});
 
             BeginMode3D(ffc.camera);
-            BeginShaderMode(lineShader);
 
             Material shadermat = LoadMaterialDefault();
             shadermat.shader = lineShader;
 
-            for (std::vector<Vector3>::size_type i = 0; i < vertices.size(); i+=3)
+            DrawPlane({0.f, 0.f, 0.f}, {WORLD_SIZE, WORLD_SIZE}, {52, 127, 42, 255});
+            for (std::vector<Vector3>::size_type i = 0; i < vertices.size(); i++)
             {
-                Vector3 triangle[3] = { vertices[i], vertices[i + 1], vertices[i + 2] };
-                SetShaderValueV(lineShader, GetShaderLocation(lineShader, "vertices"), triangle, SHADER_UNIFORM_VEC3, 3);
-                DrawMesh(grassmesh, shadermat, MatrixIdentity());
+                if (vertices[i].health <= 0)
+                {
+                    vertices.erase(vertices.begin() + i);
+                    i--;
+                    continue;
+                }
+
+                DrawTriangle3D(vertices[i].vertices[0], vertices[i].vertices[1], vertices[i].vertices[2], GREEN);
+                DrawTriangle3D(vertices[i].vertices[3], vertices[i].vertices[4], vertices[i].vertices[5], GREEN);
+                DrawTriangle3D(vertices[i].vertices[6], vertices[i].vertices[7], vertices[i].vertices[8], GREEN);
+                DrawTriangle3D(vertices[i].vertices[9], vertices[i].vertices[10], vertices[i].vertices[11], BLACK);
 
             }
-            
-            EndShaderMode();
-            DrawMesh(grassmesh, material, MatrixIdentity());
+
+            for (Character &character : characters)
+            {
+                DrawCube(character.position, 1.0f, 3.0f, 1.0f, RED);
+            }
+
+            //BeginShaderMode(lineShader);
+            //SetShaderValueV(lineShader, GetShaderLocation(lineShader, "vertices"), &vertices[i].vertices, SHADER_UNIFORM_VEC3, 12);
+            //DrawMesh(grassmesh, material, MatrixIdentity());
+            //EndShaderMode();
+
 
             
 
-            DrawGrid(20, 1.0f);
+            //draw cells
+            for (CollisionCell &cell : collisionCells)
+            {
+                DrawCubeWires((Vector3){(float)cell.x + cell.width/2, 0.0f, (float)cell.z + cell.depth/2}, cell.width, 1.0f, cell.depth, BLACK);
+                //render cell number in the cell in 3d
+                
+            }
+
 
             EndMode3D();
 
@@ -329,6 +653,10 @@ int main()
             DrawText(windForcestring.c_str(), 10, 70, 20, DARKGRAY);
             std::string verticesAmount = "Vertices: " + std::to_string(vertices.size());
             DrawText(verticesAmount.c_str(), 10, 90, 20, DARKGRAY);
+            //std::string characterspeed = "Character Speed: " + std::to_string(character.speed);
+            //DrawText(characterspeed.c_str(), 10, 110, 20, DARKGRAY);
+            //std::string chararactertarget = "Character Target: " + std::to_string(character.target);
+            //DrawText(chararactertarget.c_str(), 10, 130, 20, DARKGRAY);
             
 
         EndDrawing();
@@ -336,8 +664,7 @@ int main()
     }
 
     // De-Initialization
-    UnloadMesh(grassmesh); // Unload mesh data
-    UnloadMaterial(material); // Unload material data
+
 
     CloseWindow();        // Close window and OpenGL context
 
