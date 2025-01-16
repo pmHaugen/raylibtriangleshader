@@ -126,19 +126,15 @@ void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*
         }
     }
 
-
-
     bool triangleFound = false;
     for (int i = 0; i < 4; i++)
     {
-        //std::cout << "amount triangles: " << collisionCells[character.cells[i]].triangles.size() << " in cell: " << i << std::endl;
         for (auto &triangle : collisionCells[character.cells[i]].triangles)
         {
             if (Vector3Distance(character.position, triangle->centerPosition) < 5.0f)
             {
                 character.target = false;
                 triangle->health -= 1000;
-                //std::cout << "killing target " << triangle << std::endl;
     
                 triangleFound = true;
                 break;
@@ -170,11 +166,7 @@ void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*
                 }
             }
         }
-        //std::cout << nearestDistance << std::endl;
     }
-
-    
-    //std::cout << "Character " << character.id << " is in cell " << character.cells[0] << " with " << collisionCells[character.cells[0]].triangles.size() << " triangles" << std::endl;
 
     if (character.target)
     {
@@ -186,48 +178,6 @@ void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*
         Vector3 direction = Vector3Normalize(Vector3Subtract({character.startposition}, character.position));
         character.position = Vector3Add(character.position, Vector3Scale(direction, character.speed * deltaTime));
     }
-
-/*
-    // find nearest vertex and move towards it
-    Vector3 nearestVertex = {0.0f, 0.0f, 0.0f};
-    float nearestDistance = 1000000.0f;
-    if (!character.target)
-    {
-        for (std::vector<threeSidedTriangle>::size_type i = 0; i < triangles.size(); i++)
-        {
-            float distance = Vector3Distance(character.position, triangles[i].centerPosition);
-            if (distance < nearestDistance)
-            {
-                nearestDistance = distance;
-                nearestVertex = triangles[i].centerPosition;
-                character.target = true;
-            }
-        }
-        character.targetPosition = nearestVertex;
-    }
-
-    // move towards target
-    else
-    {
-        character.speed -= 1000.0f*GetFrameTime();
-        if (character.speed <= 0.0f)
-        {
-            character.speed = 0.0f;
-        }
-    }
-    
-
-    // if character is near any triangle vertex, remove that vertex
-    for (std::vector<threeSidedTriangle>::size_type i = 0; i < triangles.size(); i++)
-    {
-        if (Vector3Distance(character.position, triangles[i].centerPosition) < 10.0f)
-        {
-            triangles.erase(triangles.begin() + i);
-            character.target = false;
-
-        }
-    }
-    */
 }
 
 // Function to create box vertices
@@ -659,7 +609,6 @@ int main()
             DrawPlane({0.f, 0.f, 0.f}, {WORLD_SIZE, WORLD_SIZE}, {52, 127, 42, 255});
             for (std::vector<Vector3>::size_type i = 0; i < vertices.size(); i++)
             {
-                //std::cout << vertices[i].centerPosition.x << "  " << vertices[i].centerPosition.z << "  health" << vertices[i].health << std::endl;
                 if (vertices[i].health <= 0)
                 {
                     int cellIdx = static_cast<int>(((vertices[i].centerPosition.x + WORLD_SIZE * 0.5f) / CELL_SIZE))
@@ -671,7 +620,6 @@ int main()
                     {
                         if (collisionCells[cellIdx].triangles[j] == &vertices[i])
                         {
-                            //std::cout << "erasing triangle: " << &vertices[i] << std::endl;
                             collisionCells[cellIdx].triangles.erase(collisionCells[cellIdx].triangles.begin() + j);
                             found = true;
                             break;
