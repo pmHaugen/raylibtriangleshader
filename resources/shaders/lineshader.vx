@@ -1,15 +1,18 @@
-#version 330 core
+#version 330
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec4 color;
 
-layout (location = 0) in vec3 vertexPosition;
+out vec4 fragColor;
+out vec3 barycentric; // New output for barycentric coords
 
-out vec3 fragPosition; // Pass vertex position to the fragment shader
+uniform mat4 mvp;
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-
-void main()
-{
-    fragPosition = vec3(model * vec4(vertexPosition, 1.0));
-    gl_Position = projection * view * vec4(fragPosition, 1.0);
+void main() {
+    gl_Position = mvp * vec4(position, 1.0);
+    fragColor = color;
+    
+    // Generate barycentric coordinates using vertex ID
+    int id = gl_VertexID % 3;
+    barycentric = vec3(0.0);
+    barycentric[id] = 1.0;
 }
