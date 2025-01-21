@@ -60,6 +60,7 @@
         "expected": "cpp",
         "iomanip": "cpp",
         "unordered_set": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "ratio": "cpp"
     }
 }

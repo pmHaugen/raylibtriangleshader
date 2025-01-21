@@ -10,6 +10,7 @@
 #include <array>
 #include <unordered_set>
 #include <unistd.h>
+#include <algorithm>
 
 
 #define WORLD_SIZE 500
@@ -42,6 +43,7 @@ typedef struct threeSidedTriangle {
     Vector3 vertices[12];
     Vector3 centerPosition;
     float health = 1;
+    int id;
 
 } threeSidedTriangle;
 
@@ -84,7 +86,7 @@ void InitCollisionCellObjects(std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CE
             }
         }
     }
-
+    int inx = 0;
     for (threeSidedTriangle &triangle : triangles)
     {
         for (CollisionCell &cell : collisionCells)
@@ -92,6 +94,8 @@ void InitCollisionCellObjects(std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CE
             if (triangle.centerPosition.x >= cell.x && triangle.centerPosition.x < cell.x + cell.width &&
                 triangle.centerPosition.z >= cell.z && triangle.centerPosition.z < cell.z + cell.depth)
             {
+                triangle.id = inx;
+                inx++;
                 cell.triangles.push_back(&triangle);
             }
         }
@@ -99,7 +103,7 @@ void InitCollisionCellObjects(std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CE
 }
 
 // Function to update the character's position (if needed)
-void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CELL_SIZE/CELL_SIZE> &collisionCells, double deltaTime)
+void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CELL_SIZE/CELL_SIZE> &collisionCells, std::vector<int> &trianglesToUpdate, double deltaTime)
 {
     std::array<Vector2, 4> corners = {
         Vector2{character.position.x - character.width / 2, character.position.z - character.length / 2},
@@ -140,9 +144,10 @@ void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*
             {
                 character.target = false;
                 triangle->health -= 1000;
+                trianglesToUpdate.push_back(triangle->id);
     
                 triangleFound = true;
-                break;
+
             }
         }
         if (triangleFound)
@@ -157,32 +162,70 @@ void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*
 
     if (character.target == false)
     {
-        float nearestDistance = 1000000.0f;
-        for (auto cell : collisionCells)
+        for (int charCell : character.cells)
         {
-            
-            for (auto triangle : cell.triangles)
+            if (collisionCells[charCell].triangles.size() > 0)
             {
-                if (Vector3Distance(character.position, triangle->centerPosition) < nearestDistance)
+                float nearestDistance = WORLD_SIZE;
+                for (auto triangle : collisionCells[charCell].triangles)
                 {
-                    nearestDistance = Vector3Distance(character.position, triangle->centerPosition);
-                    character.target = true;
-                    character.targetPosition = triangle->centerPosition;
+                    if (Vector3Distance(character.position, triangle->centerPosition) < nearestDistance)
+                    {
+                        nearestDistance = Vector3Distance(character.position, triangle->centerPosition);
+                        std::cout << "nearest distance: " << nearestDistance << std::endl;
+                        character.target = true;
+                        character.targetPosition = triangle->centerPosition;
+                    }
+                }
+            }
+            if(character.cells[0] == character.cells[2])
+            {   
+                if (character.cells[0] == character.cells[1] && character.cells[0] == character.cells[3])
+                {
+                    break;
+                }
+                else
+                {
+                    std::cout << "something is wrong... " << character.cells[0] << "  |  " << character.cells[1] << "  |  " << character.cells[2] << "  |  " << character.cells[3] << std::endl;
+                }
+            }
+        }
+        if (character.target == false)
+        {
+            float nearestDistance = WORLD_SIZE;
+            for (auto cell : collisionCells)
+            {
+                for (auto triangle : cell.triangles)
+                {
+                    if (Vector3Distance(character.position, triangle->centerPosition) < nearestDistance)
+                    {
+                        nearestDistance = Vector3Distance(character.position, triangle->centerPosition);
+                        character.target = true;
+                        character.targetPosition = triangle->centerPosition;
+                    }
                 }
             }
         }
     }
-
+    Vector3 direction;
+    
     if (character.target)
     {
-        Vector3 direction = Vector3Normalize(Vector3Subtract(character.targetPosition, character.position));
-        character.position = Vector3Add(character.position, Vector3Scale(direction, character.speed * deltaTime));
+        direction = Vector3Normalize(Vector3Subtract(character.targetPosition, character.position));
     }
     else
     {
-        Vector3 direction = Vector3Normalize(Vector3Subtract({character.startposition}, character.position));
+        direction = Vector3Normalize(Vector3Subtract({character.startposition}, character.position));
+    }
+    if (Vector3Distance(character.position, character.targetPosition) < character.speed * deltaTime)
+    {
+        character.position = character.targetPosition;
+    }
+    else
+    {
         character.position = Vector3Add(character.position, Vector3Scale(direction, character.speed * deltaTime));
     }
+
 }
 
 // Function to create box vertices
@@ -448,6 +491,8 @@ int main()
     }
     
     InitWindow(screenWidth, screenHeight, "3D Triangle at Character Location");
+    //move window to another screen
+    SetWindowMonitor(1);
     SetTargetFPS(9999); 
 
     //rlEnableSmoothLines(); // Enable line smoothing for a smoother display
@@ -536,23 +581,23 @@ int main()
 
 
     // Main game loop
-    float trianglerRotationSpeed = 1.0f;
+    //float trianglerRotationSpeed = 1.0f;
     float windForce = 0.01f;
 
     Shader lineShader = LoadShader("resources/shaders/lineshader.vx", "resources/shaders/lineshader.fs");
     
-    Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};  // Red lines
+    //Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};  // Red lines
 
 
     //int locModel = GetShaderLocation(lineShader, "model");
     //int locView = GetShaderLocation(lineShader, "view");
     //int locProjection = GetShaderLocation(lineShader, "projection");
 
-    float edgeThreshold = 0.1f; // Adjust as needed for edge thickness
+    //float edgeThreshold = 0.1f; // Adjust as needed for edge thickness
     //SetShaderValue(lineShader, GetShaderLocation(lineShader, "edgeThreshold"), &edgeThreshold, SHADER_UNIFORM_FLOAT);
     
 
-    int locLineColor = GetShaderLocation(lineShader, "lineColor");
+    //int locLineColor = GetShaderLocation(lineShader, "lineColor");
     //SetShaderValue(lineShader, locLineColor, &lineColor, SHADER_UNIFORM_VEC4);
 
     
@@ -569,7 +614,7 @@ int main()
         character.target = false;
     }
     triangles.clear();
-    //vertices.clear();
+    vertices.clear();
 
     for (auto cell : collisionCells)
     {
@@ -596,37 +641,67 @@ int main()
         //SetShaderValueMatrix(lineShader, locModel, MatrixIdentity());
         //SetShaderValueMatrix(lineShader, locView, GetCameraMatrix(ffc.camera)); // Will be updated each frame
         //SetShaderValueMatrix(lineShader, locProjection, MatrixPerspective(ffc.camera.fovy * DEG2RAD, (float)screenWidth / (float)screenHeight, 1.01f, 10000.0f));
+        std::vector<int> trianglesToUpdate;
+        bool shaderrefresh = false;
         while (cumulativeTime >= tickTime)
         {
             for (Character &character : characters)
             {
-                UpdateCharacter(character, collisionCells, tickTime);
+                UpdateCharacter(character, collisionCells, trianglesToUpdate, tickTime);
                 character.vertices = createBox(character.position, character.width, character.height, character.length);
+            }
+            //sort vector by largest id first:
+            std::sort(trianglesToUpdate.begin(), trianglesToUpdate.end(), std::greater<int>());
+
+            for (int id : trianglesToUpdate)
+            {
+                if (triangles[id].health <= 0)
+                {
+                    shaderrefresh = true;
+                    std::cout << id << "  |  " << triangles.size() << std::endl;
+                    triangles.erase(triangles.begin() + id);
+                }
+            }
+            std::cout << std::endl;
+            if (shaderrefresh)
+            {
+                vertices.clear();
+                trianglesToUpdate.clear();
+                InitCollisionCellObjects(collisionCells, characters, triangles);
+                std::vector<VertexData> fresh;
+                for (auto &t : triangles) {
+                    for (int i = 0; i < 12; i++) {
+                        fresh.push_back({ t.vertices[i], GREEN });
+                    }
+                }
+                vertices.insert(vertices.end(), fresh.begin(), fresh.end());
+                amountOfShaderTriangles = vertices.size();
+                rlUpdateVertexBuffer(vbo, vertices.data(), vertices.size() * sizeof(VertexData), 0);
+            }
+            if (IsKeyDown(KEY_KP_1))
+            {
+                needInitCol = true;
+                std::vector<threeSidedTriangle> newTriangles = createRandomTriangles(1000, 2.5f, 4.0f, 2.0f, 6.0f, -WORLD_SIZE/2, WORLD_SIZE/2, 0, 0, -WORLD_SIZE/2, WORLD_SIZE/2);
+                triangles.insert(triangles.end(), newTriangles.begin(), newTriangles.end());
+
+                std::vector<VertexData> fresh;
+                for (auto &t : newTriangles) {
+                    for (int i = 0; i < 12; i++) {
+                        fresh.push_back({ t.vertices[i], GREEN });
+                    }
+                }
+                
+                vertices.reserve(vertices.size() + fresh.size());
+                vertices.insert(vertices.end(), fresh.begin(), fresh.end());
+                amountOfShaderTriangles = vertices.size();
+                rlUpdateVertexBuffer(vbo, vertices.data(), vertices.size() * sizeof(VertexData), 0);
+
             }
             cumulativeTime -= tickTime;
         }
 
 
         //input
-        if (IsKeyDown(KEY_KP_1))
-        {
-            needInitCol = true;
-            std::vector<threeSidedTriangle> newTriangles = createRandomTriangles(100, 2.5f, 4.0f, 2.0f, 6.0f, -WORLD_SIZE/2, WORLD_SIZE/2, 0, 0, -WORLD_SIZE/2, WORLD_SIZE/2);
-            triangles.insert(triangles.end(), newTriangles.begin(), newTriangles.end());
-
-            std::vector<VertexData> fresh;
-            for (auto &t : newTriangles) {
-                for (int i = 0; i < 12; i++) {
-                    fresh.push_back({ t.vertices[i], GREEN });
-                }
-            }
-            
-            vertices.reserve(vertices.size() + fresh.size());
-            vertices.insert(vertices.end(), fresh.begin(), fresh.end());
-            amountOfShaderTriangles = vertices.size();
-            rlUpdateVertexBuffer(vbo, vertices.data(), vertices.size() * sizeof(VertexData), 0);
-
-        }
         if (IsKeyReleased(KEY_KP_1) && needInitCol)
         {
             needInitCol = false;
@@ -645,6 +720,8 @@ int main()
             }
             triangles.clear();
             vertices.clear();
+            trianglesToUpdate.clear();
+            InitCollisionCellObjects(collisionCells, characters, triangles);
         }
 
         // Start Drawing
@@ -657,52 +734,6 @@ int main()
             //shadermat.shader = lineShader;
 
             DrawPlane({0.f, 0.f, 0.f}, {WORLD_SIZE, WORLD_SIZE}, {52, 127, 42, 255});
-            for (std::vector<Vector3>::size_type i = 0; i < triangles.size(); i++)
-            {
-                if (triangles[i].health <= 0)
-                {
-                    int cellIdx = static_cast<int>(((triangles[i].centerPosition.x + WORLD_SIZE * 0.5f) / CELL_SIZE))
-                                * (WORLD_SIZE / CELL_SIZE)
-                                + static_cast<int>(((triangles[i].centerPosition.z + WORLD_SIZE * 0.5f) / CELL_SIZE));
-
-                    bool found = false;
-                    for (int j = 0; j < collisionCells[cellIdx].triangles.size(); j++)
-                    {
-                        if (collisionCells[cellIdx].triangles[j] == &triangles[i])
-                        {
-                            collisionCells[cellIdx].triangles.erase(collisionCells[cellIdx].triangles.begin() + j);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        std::cout << "triangle not found in cell" << std::endl;
-                    }
-
-
-                    triangles.erase(triangles.begin() + i);
-                    vertices.clear();
-                    std::vector<VertexData> fresh;
-                    for (auto &t : triangles) {
-                        for (int i = 0; i < 12; i++) {
-                            fresh.push_back({ t.vertices[i], GREEN });
-                        }
-                    }
-                    vertices.insert(vertices.end(), fresh.begin(), fresh.end());
-                    amountOfShaderTriangles = vertices.size();
-                    rlUpdateVertexBuffer(vbo, vertices.data(), vertices.size() * sizeof(VertexData), 0);
-                    InitCollisionCellObjects(collisionCells, characters, triangles);
-                    i--;
-                    continue;
-                }
-
-                /*DrawTriangle3D(triangles[i].vertices[0], triangles[i].vertices[1], triangles[i].vertices[2], GREEN);
-                DrawTriangle3D(triangles[i].vertices[3], triangles[i].vertices[4], triangles[i].vertices[5], GREEN);
-                DrawTriangle3D(triangles[i].vertices[6], triangles[i].vertices[7], triangles[i].vertices[8], GREEN);
-                DrawTriangle3D(triangles[i].vertices[9], triangles[i].vertices[10], triangles[i].vertices[11], BLACK);*/
-                //std::cout << "triangle: " << &vertices[i] << "  |  ";
-            }
 
             for (Character &character : characters)
             {
@@ -774,6 +805,7 @@ int main()
             DrawText(shadertrianglesstring.c_str(), 10, 150, 20, DARKGRAY);
 
             //draw a minimap of my cell grid on the top right corner of the screen with red dots for characters and green dots for triangles
+            DrawRectangle(screenWidth - 200 + (camera.position.x + WORLD_SIZE / 2) / 5, 100 + (camera.position.z + WORLD_SIZE / 2) / 5, 5, 5, BLUE);
             for (CollisionCell &cell : collisionCells)
             {
                 for (auto &triangle : cell.triangles)
