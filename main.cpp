@@ -14,7 +14,7 @@
 
 
 #define WORLD_SIZE 500
-#define CELL_SIZE 50
+#define CELL_SIZE 20
 
 // Define the Character structure
 typedef struct Character {
@@ -89,13 +89,13 @@ void InitCollisionCellObjects(std::array<CollisionCell, WORLD_SIZE*WORLD_SIZE/CE
     int inx = 0;
     for (threeSidedTriangle &triangle : triangles)
     {
+        triangle.id = inx;
+        inx++;
         for (CollisionCell &cell : collisionCells)
         {
             if (triangle.centerPosition.x >= cell.x && triangle.centerPosition.x < cell.x + cell.width &&
                 triangle.centerPosition.z >= cell.z && triangle.centerPosition.z < cell.z + cell.depth)
             {
-                triangle.id = inx;
-                inx++;
                 cell.triangles.push_back(&triangle);
             }
         }
@@ -172,7 +172,7 @@ void UpdateCharacter(Character &character, std::array<CollisionCell, WORLD_SIZE*
                     if (Vector3Distance(character.position, triangle->centerPosition) < nearestDistance)
                     {
                         nearestDistance = Vector3Distance(character.position, triangle->centerPosition);
-                        std::cout << "nearest distance: " << nearestDistance << std::endl;
+                        //std::cout << "nearest distance: " << nearestDistance << std::endl;
                         character.target = true;
                         character.targetPosition = triangle->centerPosition;
                     }
@@ -531,12 +531,12 @@ int main()
     float cameraPitch = 0.0f;
     // Create Characters
     std::vector<Character> characters;
-    for (int i = 0; i < 1; i++)
+    for (int i = 0; i < 0; i++)
     {
         characters.push_back(Character());
         characters[i].id = i;
         characters[i].position = {(float)GetRandomValue(-WORLD_SIZE/2, WORLD_SIZE/2), 0.0f, (float)GetRandomValue(-WORLD_SIZE/2, WORLD_SIZE/2)};
-        characters[i].speed = (float)GetRandomValue(1, 100);
+        characters[i].speed = 50;//(float)GetRandomValue(1, 100);
         characters[i].target = false;
         characters[i].targetPosition = {0.0f, 0.0f, 0.0f};
         characters[i].vertices = createBox(characters[i].position, 1.0f, 3.0f, 1.0f);
@@ -619,7 +619,7 @@ int main()
     for (auto cell : collisionCells)
     {
         cell.characters.reserve(100);
-        cell.triangles.reserve(100000);
+        cell.triangles.reserve(1000000);
     }
     InitCollisionCellObjects(collisionCells, characters, triangles);
     bool needInitCol = false;
@@ -628,6 +628,7 @@ int main()
     double cumulativeTime = 0;
     double amountOfShaderTriangles = 0;
     std::cout << "Tick time: " << tickTime << std::endl;
+    bool bMinimap = false;
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
 
@@ -658,16 +659,15 @@ int main()
                 if (triangles[id].health <= 0)
                 {
                     shaderrefresh = true;
-                    std::cout << id << "  |  " << triangles.size() << std::endl;
                     triangles.erase(triangles.begin() + id);
                 }
             }
-            std::cout << std::endl;
+
             if (shaderrefresh)
             {
+                shaderrefresh = false;
                 vertices.clear();
                 trianglesToUpdate.clear();
-                InitCollisionCellObjects(collisionCells, characters, triangles);
                 std::vector<VertexData> fresh;
                 for (auto &t : triangles) {
                     for (int i = 0; i < 12; i++) {
@@ -676,6 +676,7 @@ int main()
                 }
                 vertices.insert(vertices.end(), fresh.begin(), fresh.end());
                 amountOfShaderTriangles = vertices.size();
+                InitCollisionCellObjects(collisionCells, characters, triangles);
                 rlUpdateVertexBuffer(vbo, vertices.data(), vertices.size() * sizeof(VertexData), 0);
             }
             if (IsKeyDown(KEY_KP_1))
@@ -722,6 +723,10 @@ int main()
             vertices.clear();
             trianglesToUpdate.clear();
             InitCollisionCellObjects(collisionCells, characters, triangles);
+        }
+        if (IsKeyPressed(KEY_KP_2))
+        {
+            bMinimap = !bMinimap;
         }
 
         // Start Drawing
@@ -805,16 +810,19 @@ int main()
             DrawText(shadertrianglesstring.c_str(), 10, 150, 20, DARKGRAY);
 
             //draw a minimap of my cell grid on the top right corner of the screen with red dots for characters and green dots for triangles
-            DrawRectangle(screenWidth - 200 + (camera.position.x + WORLD_SIZE / 2) / 5, 100 + (camera.position.z + WORLD_SIZE / 2) / 5, 5, 5, BLUE);
-            for (CollisionCell &cell : collisionCells)
+            if (bMinimap)
             {
-                for (auto &triangle : cell.triangles)
+                DrawRectangle(screenWidth - 200 + (camera.position.x + WORLD_SIZE / 2) / 5, 100 + (camera.position.z + WORLD_SIZE / 2) / 5, 5, 5, BLUE);
+                for (CollisionCell &cell : collisionCells)
                 {
-                    DrawRectangle(screenWidth - 200 + triangle->centerPosition.x / 5, 100 + triangle->centerPosition.z / 5, 1, 1, GREEN);
-                }
-                for (auto &character : cell.characters)
-                {
-                    DrawRectangle(screenWidth - 200 + character->position.x / 5, 100 + character->position.z / 5, 5, 5, RED);
+                    for (auto &triangle : cell.triangles)
+                    {
+                        DrawRectangle(screenWidth - 200 + triangle->centerPosition.x / 5, 100 + triangle->centerPosition.z / 5, 1, 1, GREEN);
+                    }
+                    for (auto &character : cell.characters)
+                    {
+                        DrawRectangle(screenWidth - 200 + character->position.x / 5, 100 + character->position.z / 5, 5, 5, RED);
+                    }
                 }
             }
 
